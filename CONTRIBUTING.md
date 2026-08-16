@@ -59,6 +59,24 @@ Keep commits scoped to one logical change. A commit that mixes a bug fix with an
 - No unrelated changes bundled in — formatting-only changes to untouched files, drive-by renames, etc. belong in their own PR.
 - Everything is merged through review. No direct pushes to `main`.
 
+## Main Branch Protection
+
+`main` is the shared stable branch for the project.
+
+Contributors should not push directly to `main`. All changes should be developed on a separate branch and submitted through a Pull Request.
+
+The repository's GitHub ruleset is intended to protect `main` by requiring Pull Requests and preventing destructive operations such as force-pushing or deleting the branch.
+
+Until these rules are technically enforced by the repository configuration, the team should follow the same workflow manually.
+
+### Main branch rules
+
+- Do not push directly to `main`.
+- Do not force-push to `main`.
+- Do not delete `main`.
+- Do not bypass the Pull Request and review process.
+- Merge changes into `main` only after the required review and validation is complete.
+
 Use the [pull request template](.github/pull_request_template.md) — it's applied automatically.
 
 ## Code quality
@@ -90,3 +108,29 @@ If a contribution changes an established architectural decision — the paginati
 ## Documentation
 
 If a change affects behavior, the API, or the database schema, update the corresponding section of `DEVFEED.md` in the same PR. Documentation that describes something the code no longer does is worse than no documentation.
+
+## Security
+
+Never commit secrets or credentials to the repository, including:
+
+- GitHub tokens
+- API keys
+- Database credentials
+- Passwords
+- Private keys
+- `.env` files containing secrets
+- Production configuration containing sensitive values
+
+Use environment variables or the project's approved secret-management mechanism instead.
+
+If you discover a security vulnerability, do not disclose sensitive details in a public GitHub issue. Follow the process described in [`SECURITY.md`](./SECURITY.md).
+
+## Repository Content Safety
+
+DevFeed processes content originating from public GitHub repositories. Repository content must always be treated as untrusted input.
+
+Contributors must not execute code obtained from repositories being ingested, analysed, classified, or displayed by DevFeed.
+
+Parsing and analysis components must use appropriate limits for file size, processing time, and supported content types.
+
+
