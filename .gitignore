@@ -1,0 +1,67 @@
+# --- Environment / secrets ---
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
+
+# --- Python / FastAPI backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Alembic
+# (migration files themselves ARE committed — only local DB artifacts are ignored below)
+
+# --- Node.js / Next.js / TypeScript frontend ---
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+next-env.d.ts
+
+# --- Local databases ---
+*.sqlite3
+*.db
+postgres-data/
+
+# --- DevFeed raw ingestion data (Stage 0 local storage) ---
+# Raw GitHub payloads are large, regenerable, and never committed.
+# The evaluation dataset and category taxonomy ARE committed — do not ignore data/eval/ or data/taxonomy/.
+data/raw/
+
+# --- Test / cache artifacts ---
+.cache/
+*.log
+coverage/
+.nyc_output/
+
+# --- Build artifacts ---
+*.tsbuildinfo
+.vercel/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
