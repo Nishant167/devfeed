@@ -1,0 +1,10 @@
+%% Ranking pipeline — planned, not implemented.
+%% Source: DEVFEED.md §12, referenced from docs/architecture/data-flow.md and docs/decisions/ADR-0007
+flowchart TD
+    Q["Feed request: topics, cursor"] --> PF["PostgreSQL pre-filter<br/>topic/language/recency<br/>500-1,000 candidates"]
+    PF --> RANK["rank(candidates, profile, context)<br/>pure function, no I/O"]
+    RANK --> SIG["Signals: quality, freshness,<br/>popularity, star velocity,<br/>topic relevance, novelty"]
+    SIG --> BASE["base_score<br/>weighted sum, missing signals<br/>excluded + renormalized"]
+    BASE --> MMR["MMR diversity pass<br/>over the FULL candidate set"]
+    MMR --> ORDER["Deterministic total ordering"]
+    ORDER --> PAGE["Page = slice by position"]

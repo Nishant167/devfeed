@@ -1,0 +1,9 @@
+%% System Context — planned Stage 2 boundary. Nothing here is deployed.
+%% Source: DEVFEED.md §7, referenced from docs/architecture/system-context.md
+flowchart LR
+    USER["Developer<br/>(end user, anonymous session)"] -->|browses, saves, searches| WEB["DevFeed Web App"]
+    WEB -->|"REST calls, /api/v1/*"| API["DevFeed API"]
+    API -->|reads| PG[("PostgreSQL")]
+    ING["Ingestion Job"] -->|writes| PG
+    ING -->|authenticated requests| GH["GitHub API<br/>(external, rate-limited)"]
+    AI["AI Provider<br/>(external, future, optional)"] -.->|not yet integrated| API

@@ -1,0 +1,12 @@
+%% Database ERD — planned schema, no database exists yet.
+%% Source: DEVFEED.md §19, referenced from docs/data/data-model.md
+erDiagram
+    REPOSITORIES ||--o{ REPOSITORY_TOPICS : has
+    REPOSITORIES ||--o{ REPOSITORY_LANGUAGES : has
+    REPOSITORIES ||--o{ USER_EVENTS : "referenced by"
+    USERS ||--o{ SAVES : "Stage 4+"
+    REPOSITORIES ||--o{ SAVES : "Stage 4+"
+    USERS ||--o{ USER_INTERESTS : "Stage 5+"
+    USERS ||--o{ COLLECTIONS : "Stage 11+"
+    COLLECTIONS ||--o{ COLLECTION_ITEMS : "Stage 11+"
+    REPOSITORIES ||--o{ COLLECTION_ITEMS : "Stage 11+"

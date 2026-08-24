@@ -1,0 +1,12 @@
+%% GitHub ingestion flow — planned, not implemented.
+%% Source: DEVFEED.md §9, referenced from docs/data/github-data.md and docs/architecture/data-flow.md
+flowchart LR
+    A["Query construction<br/>language x star-band x date-range"] --> B["GitHub Search API<br/>authenticated, paginated"]
+    B --> C{"Known repo?"}
+    C -->|"yes"| D["Conditional request<br/>If-None-Match: etag"]
+    C -->|"no"| E["Full fetch"]
+    D -->|"304 Not Modified"| F["Skip - no work"]
+    D -->|"200 changed"| E
+    E --> G["Raw JSON stored"]
+    G --> RAW[("Raw Payload Store")]
+    G --> H["Processing pipeline"]

@@ -1,0 +1,12 @@
+%% High-level architecture — planned, Stage 0-3 target. Nothing here is implemented.
+%% Source: DEVFEED.md §7, referenced from docs/architecture/architecture-overview.md
+flowchart TD
+    GH["GitHub API"] -->|"ETags, pagination, backoff"| ING["Ingestion Job<br/>separately deployed, scheduled"]
+    ING -->|"raw JSON, immutable"| RAW[("Raw Payload Store")]
+    ING -->|"normalized fields"| PG[("PostgreSQL<br/>repositories, topics,<br/>languages, events")]
+    PG --> CAND["Candidate Retrieval<br/>indexed pre-filter, 500-1,000 rows"]
+    CAND --> RANK["Ranking Engine<br/>core/ranking - pure function"]
+    RANK --> MMR["Diversity / MMR<br/>over the full candidate set"]
+    MMR --> API["Feed API<br/>FastAPI, /api/v1/*"]
+    API --> WEB["Web Application<br/>Next.js"]
+    AI["AI Provider<br/>optional, pluggable"] -.->|"not in the critical path"| API

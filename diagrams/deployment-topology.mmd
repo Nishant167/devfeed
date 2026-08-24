@@ -1,0 +1,12 @@
+%% Deployment topology — planned Stage 2 target. Nothing is currently deployed.
+%% Source: DEVFEED.md §22, referenced from docs/architecture/deployment-architecture.md and docs/operations/deployment.md
+flowchart TD
+    subgraph "Current Design: Stage 2 hosting (not deployed)"
+    FE["Frontend<br/>Vercel (free tier)"]
+    APIH["API<br/>Fly.io or Railway (free tier)"]
+    DB[("Database<br/>Neon or Supabase Postgres (free tier)")]
+    ING["Ingestion<br/>platform scheduler or GitHub Actions cron"]
+    end
+    FE --> APIH --> DB
+    ING --> DB
+    ING -.-> GH["GitHub API"]
