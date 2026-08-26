@@ -213,9 +213,27 @@ def run(months_back: int, output_path: str) -> None:
         print(f"[stage0] fetching secondary data for top {len(candidates)} candidates (capped at {SECONDARY_FETCH_CAP})...")
 
         scored: list[dict] = []
+        failed_count = 0
         for i, item in enumerate(candidates, start=1):
             full_name = item["full_name"]
-            secondary = _secondary_fetch(client, raw_store, run_id, today, full_name)
+            try:
+                secondary = _secondary_fetch(client, raw_store, run_id, today, full_name)
+            except Exception as exc:  # noqa: BLE001 - one repo's failure must never abort the batch
+                # DEVFEED.md section 9: "A repository that fails to parse or
+                # fetch is marked error with a reason and skipped -- it never
+                # aborts the batch." Applies here exactly as it does to the
+                # primary ingestion pipeline. Degrade to empty secondary
+                # signals rather than losing the repo (and the whole run)
+                # entirely.
+                failed_count += 1
+                print(f"[stage0]   WARNING: secondary fetch failed for {full_name}: {exc!r} -- degrading to missing signals")
+                secondary = {
+                    "readme_has_code_blocks": False,
+                    "contributor_count": 0,
+                    "release_count": 0,
+                    "has_ci": False,
+                    "has_tests": False,
+                }
             repo = {
                 "full_name": full_name,
                 "description": item.get("description"),
@@ -230,7 +248,9 @@ def run(months_back: int, output_path: str) -> None:
             repo["base_score"] = base_score(repo, now=today_date)
             scored.append(repo)
             if i % 100 == 0:
-                print(f"[stage0]   ...{i}/{len(candidates)} secondary-fetched")
+                print(f"[stage0]   ...{i}/{len(candidates)} secondary-fetched ({failed_count} failed so far)")
+        if failed_count:
+            print(f"[stage0] {failed_count}/{len(candidates)} repos had degraded (missing) secondary signals due to fetch failures")
 
     ranked = sorted(scored, key=lambda r: r["base_score"], reverse=True)[:TOP_N]
     print(f"[stage0] rendering top {len(ranked)} to {output_path}")

@@ -184,12 +184,19 @@ class GitHubClient:
     def path_exists(self, full_name: str, path: str) -> bool:
         """True if `path` exists in the repo's default branch (used to
         approximate has_ci by checking for .github/workflows, and has_tests
-        by checking common test directory names)."""
+        by checking common test directory names).
+
+        404 means "genuinely doesn't exist" (the common case). 403 after
+        retries are exhausted is treated the same way -- "couldn't verify" --
+        rather than raised, because some repos return a persistent 403 here
+        (e.g. access-blocked/restricted content) that no amount of retrying
+        resolves, and this is a best-effort heuristic signal, not a
+        requirement. Matches get_contributors/get_releases below."""
         try:
             self._request_json("GET", f"/repos/{full_name}/contents/{path}")
             return True
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
+            if exc.response.status_code in (404, 403):
                 return False
             raise
 

@@ -1,4 +1,6 @@
-from stage0.ingest import FilesystemRawPayloadStore, make_run_id
+import httpx
+
+from stage0.ingest import FilesystemRawPayloadStore, GitHubClient, make_run_id
 
 
 def test_filesystem_raw_payload_store_put_get_roundtrip(tmp_path):
@@ -30,3 +32,35 @@ def test_make_run_id_is_distinct_across_different_timestamps():
     second = make_run_id(now=2000.0)
     assert first != second
     assert first.startswith("run-")
+
+
+def test_path_exists_true_on_200():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"name": "tests", "type": "dir"})
+
+    with GitHubClient("fake-token", transport=httpx.MockTransport(handler)) as client:
+        assert client.path_exists("owner/repo", "tests") is True
+
+
+def test_path_exists_false_on_404():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    with GitHubClient("fake-token", transport=httpx.MockTransport(handler)) as client:
+        assert client.path_exists("owner/repo", "tests") is False
+
+
+def test_path_exists_false_on_persistent_403_not_raised(monkeypatch):
+    """Regression test: a real overnight run crashed here. GitHub returns a
+    persistent 403 (e.g. an access-blocked repo) that retrying never resolves.
+    path_exists must degrade to False like a 404, never propagate -- one
+    repo's blocked status must not be able to kill the whole secondary-fetch
+    batch (DEVFEED.md section 9: "one repository's failure never takes down
+    the whole ingestion run")."""
+    monkeypatch.setattr("time.sleep", lambda *_args, **_kwargs: None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"message": "Repository access blocked"})
+
+    with GitHubClient("fake-token", transport=httpx.MockTransport(handler)) as client:
+        assert client.path_exists("owner/blocked-repo", "tests") is False
