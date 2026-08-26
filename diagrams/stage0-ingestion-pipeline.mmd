@@ -1,0 +1,19 @@
+%% Stage 0 ingestion + scoring pipeline — planned, not implemented.
+%% Corrected per plan-eng-review session 2026-08-27: bucket-size probe, paced
+%% search, run_id-keyed raw storage, secondary-fetch cap, whole-token junk
+%% hard-exclude. Source: DEVFEED.md §9, §11, §28.
+flowchart LR
+    A["Query grid<br/>language x star-band x month<br/>~240 starting queries"] --> P{"Bucket-size probe<br/>count-only Search request"}
+    P -->|"total_count > ~800"| S["Split star band further"]
+    S --> P
+    P -->|"under cap"| Q["Paced Search API call<br/>authenticated, up to 30 req/min"]
+    Q --> R["Raw JSON stored<br/>github/{date}/{run_id}/..."]
+    R --> RAW[("Raw Payload Store<br/>local disk, Stage 0")]
+    R --> META["Defensive metadata parse<br/>tolerate null/missing fields"]
+    META --> CAP["Cap survivors<br/>e.g. top 2,000 by metadata score"]
+    CAP --> SEC["Secondary fetch<br/>README, contributors, releases<br/>5,000/hr core limit"]
+    SEC --> JUNK{"Junk-pattern filter<br/>whole-token match"}
+    JUNK -->|"match"| DROP["Hard exclude"]
+    JUNK -->|"no match"| SCORE["Quality + freshness scoring<br/>star velocity/MMR arrive Stage 1"]
+    SCORE --> HTML["Static HTML page<br/>top ~100 results"]
+    HTML --> SCROLL["Personal scroll-through<br/>vs Stage 0 gate criteria"]
