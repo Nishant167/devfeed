@@ -185,7 +185,7 @@ DevFeed is built in stages, and each stage has to earn the next one. The riskies
 
 ```mermaid
 flowchart TD
-    S0["Stage 0<br/>Scroll Test<br/>~1 weekend, throwaway code"] --> S1["Stage 1<br/>Ranking Engine<br/>made measurable"]
+    S0["Stage 0<br/>Scroll Test<br/>~1 weekend of dev + hours of<br/>background ingestion, throwaway code"] --> S1["Stage 1<br/>Ranking Engine<br/>made measurable"]
     S1 --> S2["Stage 2<br/>Public Product<br/>~2 weeks, deployed"]
     S2 --> S3["Stage 3<br/>Real User Validation<br/>10-20 developers"]
     S3 --> S4["Stage 4<br/>Production Foundation<br/>auth, workers, observability"]
@@ -340,14 +340,16 @@ flowchart LR
 
 ### GitHub API usage
 
-Ingestion uses GitHub's Search API, authenticated, with rate limits monitored on every response via `X-RateLimit-Remaining`. Authenticated requests get 5,000/hour. Ingestion sleeps proactively before exhaustion instead of reacting to a 403, and backs off with jitter on `403` and `5xx` responses, with retries.
+Ingestion uses GitHub's Search API, authenticated, with rate limits monitored on every response via `X-RateLimit-Remaining`. The Search API has its own, stricter limit — **30 requests/minute for authenticated users** — separate from the general core REST limit of 5,000/hour that applies to non-search endpoints (repository detail, README, contributors, releases). The query loop paces itself against the 30/min Search limit explicitly (a fixed delay between requests), rather than relying on the core-REST budget, which doesn't apply to Search. Ingestion sleeps proactively before exhaustion instead of reacting to a 403, and backs off with jitter on `403` and `5xx` responses, with retries.
 
 ### Query strategy — language, star, and date slicing
 
-GitHub's Search API caps out at 1,000 results per query, so a single query like `language:python` cannot enumerate every matching repository. The corpus is built by slicing the search space across language, star range, and date so each individual query stays well under the cap:
+GitHub's Search API caps out at 1,000 results per query, so a single query like `language:python` cannot enumerate every matching repository. The corpus is built by slicing the search space across language, star range, and date so each individual query stays well under the cap — but "under the cap" has to be verified per bucket, not assumed from the grid shape alone: a busy month for `language:python stars:50..100` can itself exceed 1,000 matches, and GitHub truncates to its own relevance ordering rather than sampling neutrally, which would systematically bias against exactly the low-star "hidden gem" repositories the product cares about most.
 
-- **Languages:** Python, TypeScript, Rust, Go
-- **Star bands:** `50..100`, `100..250`, `250..1000`, `1000..5000`, `>5000`
+**Bucket-size probe, before full pagination.** For each `(language, star_band, date_range)` combination, a single count-only Search request (`total_count` in the response, no pagination) runs first. Any bucket whose `total_count` exceeds roughly 800 (leaving headroom under the 1,000 cap) gets its star band split further before the real, paginated query runs. The star bands below are a starting grid, not a fixed one — low bands are expected to split, and language grids are sized independently since Go and Rust have a fraction of Python/TypeScript's total repo count.
+
+- **Languages:** Python, TypeScript, Rust, Go — each tuned to its own actual volume via the probe, not a shared grid.
+- **Star bands (starting grid, split further per the probe above):** `50..100`, `100..250`, `250..1000`, `1000..5000`, `>5000`
 - **Date ranges:** concrete calendar-month ranges across the trailing 12 months — real dates, not a symbolic placeholder
 
 ```python
@@ -357,10 +359,11 @@ from calendar import monthrange
 LANGUAGES = ["python", "typescript", "rust", "go"]
 STAR_BANDS = ["50..100", "100..250", "250..1000", "1000..5000", ">5000"]
 
-def month_ranges(months_back: int = 12) -> list[str]:
-    """Yields concrete 'YYYY-MM-DD..YYYY-MM-DD' ranges, e.g. '2026-07-01..2026-07-31'."""
+def month_ranges(months_back: int = 12, today: date | None = None) -> list[str]:
+    """Yields concrete 'YYYY-MM-DD..YYYY-MM-DD' ranges, e.g. '2026-07-01..2026-07-31'.
+    `today` is injectable so this is unit-testable without patching the clock."""
+    today = today or date.today()
     ranges = []
-    today = date.today()
     for i in range(months_back):
         y, m = today.year, today.month - i
         while m <= 0:
@@ -370,15 +373,23 @@ def month_ranges(months_back: int = 12) -> list[str]:
         ranges.append(f"{y:04d}-{m:02d}-01..{y:04d}-{m:02d}-{last_day:02d}")
     return ranges
 
+def split_band_if_needed(lang: str, star_band: str, date_range: str, threshold: int = 800) -> list[str]:
+    """Probes total_count for one bucket (single count-only Search request, no pagination);
+    splits the star band further if it's near the 1,000 cap. Returns one or more star-band
+    strings to actually query."""
+    ...
+
 for lang in LANGUAGES:
     for stars in STAR_BANDS:
         for date_range in month_ranges():
-            query = f"language:{lang} stars:{stars} pushed:{date_range}"
-            # e.g. "language:python stars:250..1000 pushed:2026-07-01..2026-07-31"
-            # paginate up to 1000 results per query
+            for actual_band in split_band_if_needed(lang, stars, date_range):
+                query = f"language:{lang} stars:{actual_band} pushed:{date_range}"
+                # e.g. "language:python stars:250..1000 pushed:2026-07-01..2026-07-31"
+                # paginate up to 1000 results per query, paced at <=30 requests/minute
+                # (GitHub Search API's authenticated rate limit — see "GitHub API usage" above)
 ```
 
-This produces roughly 240 queries. Expected order of magnitude is 10,000–20,000 unique repositories on the first run — that's a planning estimate to size the work, not something the architecture depends on. Actual yield is measured empirically during Stage 0, not assumed.
+This starts at roughly 240 queries before any splitting; the probe step means the actual query count is higher wherever a bucket needs splitting, and lower where a language's real corpus is smaller than the starting grid assumes. Expected order of magnitude is 10,000–20,000 unique repositories on the first run — that's a planning estimate to size the work, not something the architecture depends on. Actual yield is measured empirically during Stage 0, not assumed.
 
 ### Conditional requests and rate limits
 
@@ -392,6 +403,8 @@ Every repository row tracks `last_synced_at`, `etag`, `last_modified`, `sync_sta
 
 GitHub API responses are treated as partial by default. Every field access tolerates `null`, missing keys, and unexpected types. Nothing downstream assumes `description`, `license`, `topics`, or `homepage` is present. README content and contributor/release information are fetched as a secondary step, only for repositories that survive the initial metadata-based filter, to avoid doubling the request count unnecessarily.
 
+**Secondary-fetch cap.** The metadata-only filter can plausibly pass several thousand repositories, and each one needs 2-3 secondary REST calls (README, contributors, releases) against the general 5,000/hour core limit — separate from the Search API's 30/minute limit above. Left uncapped, that's tens of thousands of requests and multiple hours, not accounted for in a single sitting. Survivors are capped at a fixed ceiling (e.g. top 2,000 by metadata-only score) before the secondary-fetch step runs. Stage 0 ingestion is expected to run for hours, potentially unattended or overnight, not necessarily inside one sitting.
+
 ### Raw payload preservation
 
 Raw API responses are stored before any transformation and are never discarded — this is what lets us re-score or re-classify later without re-fetching from GitHub. Access goes through a small `RawPayloadStore` interface rather than direct filesystem calls, so the backing store can change without touching ingestion logic:
@@ -401,7 +414,9 @@ class RawPayloadStore(Protocol):
     def put(self, key: str, payload: bytes) -> None: ...
     def get(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
-    # key convention: "github/{YYYY-MM-DD}/{search|repositories}/{identifier}.json"
+    # key convention: "github/{YYYY-MM-DD}/{run_id}/{search|repositories}/{identifier}.json"
+    # run_id (not just date) so a same-day re-run never overwrites a prior run's snapshot —
+    # date-only granularity would silently violate "never discarded" above.
 ```
 
 | Stage | Implementation | Durability |
@@ -456,11 +471,11 @@ A meaningful description, GitHub topics, a license, a README with actual code ex
 
 ### Negative signals
 
-Archived, forked, or effectively dead repositories; a name or description matching a known junk pattern; suspicious star growth that looks manufactured rather than organic; a README that's mostly badges with little substance.
+Archived, forked, or effectively dead repositories; a name matching a known junk pattern (hard exclude — see below); suspicious star growth that looks manufactured rather than organic; a README that's mostly badges with little substance.
 
 ### Junk patterns
 
-Maintained as configuration, not hard-coded into application logic, so the list can be extended without a code change:
+Maintained as configuration, not hard-coded into application logic, so the list can be extended without a code change. Matching is **whole-token, not substring** — the repository name is split on `-` and `_`, and each pattern is checked against whole tokens, so `cloud-resources-manager` does not match `resources` and `ml-course-recommender` does not match `course`. A match is a **hard exclude**: the repository never enters the candidate set, rather than being folded into the quality score as a penalty — filtering happens before ranking so ranking only ever sees repositories worth ranking (see the quality score below).
 
 ```
 awesome-, -awesome, tutorial, course, bootcamp, interview-, -questions,
@@ -558,16 +573,21 @@ The normalized signal fed into ranking is `star_growth_ratio_30d`, clipped to `[
 **Missing data.** When stargazer history is unavailable or too expensive to fetch (very high-star repos with deep pagination), `raw_star_growth_30d` is left `null` — never guessed or imputed. A repository with a missing signal has that signal **excluded from the weighted sum, with the remaining weights renormalized**, rather than scored as zero:
 
 ```python
-def weighted_score(signals: dict[str, float], weights: dict[str, float]) -> tuple[float, list[str]]:
-    """Signals with a None value are excluded; remaining weights are renormalized to sum to 1."""
+def weighted_score(signals: dict[str, float], weights: dict[str, float]) -> tuple[float | None, list[str]]:
+    """Signals with a None value are excluded; remaining weights are renormalized to sum to 1.
+    Returns (None, excluded) if every signal is missing — the caller excludes that repository
+    from the ranked set entirely. A score of 0.0 means "worst possible," which is not the same
+    thing as "no data," and must never be returned for the all-missing case."""
     available = {k: v for k, v in signals.items() if v is not None}
     excluded = [k for k, v in signals.items() if v is None]
-    total_weight = sum(weights[k] for k in available) or 1.0
+    if not available:
+        return None, excluded
+    total_weight = sum(weights[k] for k in available)
     score = sum(weights[k] * available[k] for k in available) / total_weight
     return score, excluded
 ```
 
-Zero is the minimum of a `[0,1]` signal, so substituting it would actively penalize a repository for missing data rather than treating it neutrally — a well-maintained repo with unmeasured velocity would rank below an identical repo with a confirmed-zero velocity, which is backwards. Excluded signals are surfaced in the API response (`excluded_signals`) rather than silently dropped. If more than roughly 20% of the corpus ends up with excluded signals, that's a sign to improve ingestion coverage, not to change the scoring rule.
+Zero is the minimum of a `[0,1]` signal, so substituting it would actively penalize a repository for missing data rather than treating it neutrally — a well-maintained repo with unmeasured velocity would rank below an identical repo with a confirmed-zero velocity, which is backwards. Excluded signals are surfaced in the API response (`excluded_signals`) rather than silently dropped. If every signal for a repository is missing, `weighted_score` returns `None` rather than falling back to a default weight — the caller drops that repository from the ranked set rather than silently scoring it 0, which would be the single worst possible score for a repo about which nothing could actually be measured. If more than roughly 20% of the corpus ends up with excluded signals, that's a sign to improve ingestion coverage, not to change the scoring rule.
 
 The exact data source — the GitHub stargazers endpoint (`Accept: application/vnd.github.star+json`) versus GH Archive `WatchEvent` data — isn't decided yet; it's chosen during Stage 1 once corpus size shows which one is fast enough at scale. The field definitions above hold regardless of which source populates them.
 
@@ -1312,6 +1332,8 @@ Session length is explicitly not an optimization target, at any stage.
 
 ## 24. Testing and Evaluation
 
+**Stage 0 (throwaway script)** — the script itself isn't productionized, but its four pure functions (junk-pattern filter, quality score, freshness score, `month_ranges`) get unit tests. They're cheap to test regardless of the surrounding script's lifespan, and the same logic gets reimplemented for Stage 1's `core/ranking/` regardless of whether Stage 0's script itself is reused. The I/O shell — API calls, backoff, HTML rendering — stays untested, consistent with "throwaway code stays throwaway" (Section 25).
+
 **Ranking** (`core/ranking/`) — the highest bar in the codebase, target 80%+ coverage: signal correctness, weighting, MMR behavior, and the shape of the explainability output. This is the module least allowed to regress silently.
 
 **Ingestion** — integration tests against recorded fixtures, covering defensive parsing of missing fields and rate-limit backoff behavior. Fixtures are clearly marked as fixtures, never presented as live data.
@@ -1476,7 +1498,8 @@ What gets built first, and nothing more:
 3. Deterministic scoring using the quality and freshness signals from Section 12 — star velocity and MMR aren't needed yet; those arrive in Stage 1.
 4. Junk-pattern filtering against the list in Section 11.
 5. A static HTML page rendering the top ~100 results with repository, description, stars, and score.
-6. A personal scroll-through against the Stage 0 gate criteria in Section 26.
+6. Unit tests for the four pure functions — `month_ranges`, junk-pattern filter, quality score, freshness score — see Section 24.
+7. A personal scroll-through against the Stage 0 gate criteria in Section 26.
 
 No authentication, no database, no deployed backend, no AI. If this doesn't clear the gate, nothing after it matters yet.
 
