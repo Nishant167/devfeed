@@ -130,7 +130,6 @@ _PAGE_TEMPLATE = """<!doctype html>
 <header>
   <div class="header-inner">
     <div class="brand">devfeed<span class="dot">.</span></div>
-    <p class="subtitle">Stage 0 scroll test &middot; {count} ranked, non-junk repositories &middot; not the real product, a throwaway validation script</p>
   </div>
 </header>
 <main>
