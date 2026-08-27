@@ -2,15 +2,22 @@
 "A static HTML page rendering the top ~100 results with repository,
 description, stars, and score."). Plain HTML/CSS, no framework, no JS.
 
-Visual design ported from a Figma Make React/Tailwind mockup the project owner
-supplied (colors, typography, card layout) -- but scoped to what Stage 0
-actually has. Deliberately does NOT include: a working search box, tabs
-(trending/starred), a bottom nav, star/watch buttons, or "starred by people
-you follow" -- all of that implies interactivity, accounts, or a social layer
-that don't exist yet (Stage 2+ / Stage 10, DEVFEED.md sections 20/21/18). The
-one real, working action is "Open on GitHub". Quality badges (License/Tests/
-CI/Docs) are driven by the actual computed signals, not fabricated
-CI-passing/coverage numbers like the mockup had.
+Visual design: Instagram-style social feed, per explicit, repeated project-
+owner direction (not a compromise/adaptation -- the owner wants this look and
+DEVFEED.md's product direction now embraces it, see section 1's revision
+note). Palette and fonts from the "Social Media Feed" Figma Make export
+(purple/cyan, Fraunces + Inter). Stories bar, post-card layout, and heart/
+comment/bookmark icon row are all real data, not fabricated social state:
+- The "stories" strip is the top-ranked repos, not fake user stories.
+- The heart icon shows real star count, the comment icon shows real open
+  issue count, the bookmark icon shows the real computed base_score.
+- The verified badge shows only when a repo actually clears every quality
+  signal (license+tests+CI+docs), not decoratively.
+- "Open on GitHub" is the one real, working action (the repo name link and
+  the pill button both go there) -- there is no working Like/Save/Follow
+  button because Stage 0 has no backend to persist a click; adding one that
+  looks clickable but does nothing would be exactly the "misleading
+  popularity signal" DEVFEED.md section 2 still rules out even post-pivot.
 
 Untested per the spec's Testing Plan ("HTML rendering stays untested -- this is
 the I/O shell, not the pure logic").
@@ -35,7 +42,6 @@ _PAGE_TEMPLATE = """<!doctype html>
     --foreground: #f0f0f5;
     --card: #13131a;
     --primary: #7c3aed;
-    --primary-foreground: #ffffff;
     --secondary: #1e1e2a;
     --secondary-foreground: #a0a0b8;
     --muted-foreground: #6b6b88;
@@ -46,83 +52,74 @@ _PAGE_TEMPLATE = """<!doctype html>
   }}
   * {{ box-sizing: border-box; }}
   body {{
-    background: var(--background);
-    color: var(--foreground);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    margin: 0;
+    background: var(--background); color: var(--foreground);
+    font-family: 'Inter', -apple-system, sans-serif; margin: 0;
     -webkit-font-smoothing: antialiased;
   }}
+  a {{ color: var(--primary); text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
   header {{
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(10,10,15,0.9);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--border);
-    padding: 14px 16px;
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(10,10,15,0.9); backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border); padding: 0 16px;
   }}
-  .header-inner {{ max-width: 640px; margin: 0 auto; }}
-  .brand {{
-    display: flex; align-items: baseline; gap: 8px;
-    font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700;
-    letter-spacing: -0.4px;
-  }}
+  .header-inner {{ max-width: 560px; margin: 0 auto; height: 56px; display: flex; align-items: center; justify-content: space-between; }}
+  .brand {{ font-family: 'Fraunces', serif; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }}
   .brand .dot {{ color: var(--primary); }}
-  .subtitle {{ margin: 4px 0 0; font-size: 12.5px; color: var(--muted-foreground); }}
-  main {{ max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; display: flex; flex-direction: column; gap: 10px; }}
-  .card {{
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
+  .count {{ font-size: 12px; color: var(--muted-foreground); }}
+  main {{ max-width: 560px; margin: 0 auto; padding: 0 0 60px; }}
+
+  .stories {{
+    display: flex; gap: 14px; padding: 16px; overflow-x: auto;
+    border-bottom: 1px solid var(--border);
   }}
-  .card-head {{ padding: 14px 16px 10px; display: flex; gap: 12px; align-items: flex-start; }}
-  .avatar {{
-    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
-    border: 1px solid var(--border); object-fit: cover; background: var(--secondary);
+  .story {{ display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }}
+  .story-ring {{
+    width: 60px; height: 60px; border-radius: 50%; padding: 2px;
+    background: linear-gradient(135deg, #7c3aed, #06b6d4);
   }}
-  .avatar-fallback {{
-    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
-    border: 1px solid var(--border); background: var(--secondary);
-    display: flex; align-items: center; justify-content: center;
-    color: var(--muted-foreground); font-size: 13px; font-weight: 600;
+  .story-ring img, .story-ring .fallback {{
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--background); display: block;
   }}
-  .title-row {{ display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }}
-  .rank {{ color: var(--muted-foreground); font-size: 12px; margin-right: 2px; }}
-  .owner {{ font-size: 13px; color: var(--muted-foreground); }}
-  .slash {{ color: var(--border); font-size: 13px; }}
-  .name {{ font-size: 15px; font-weight: 700; color: var(--foreground); letter-spacing: -0.2px; }}
-  .name a {{ color: inherit; text-decoration: none; }}
-  .name a:hover {{ text-decoration: underline; }}
-  .desc {{ margin: 6px 0 0; font-size: 13px; color: var(--secondary-foreground); line-height: 1.5; }}
-  .topics {{ padding: 0 16px 12px; display: flex; gap: 6px; flex-wrap: wrap; }}
+  .story-ring .fallback {{ background: var(--secondary); display: flex; align-items: center; justify-content: center; color: var(--muted-foreground); font-size: 18px; font-weight: 600; }}
+  .story-label {{ font-size: 10px; color: var(--muted-foreground); max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+
+  .feed {{ display: flex; flex-direction: column; gap: 12px; padding: 16px; }}
+  .post {{ background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }}
+  .post-head {{ display: flex; align-items: center; gap: 12px; padding: 14px 16px; }}
+  .avatar {{ width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); flex-shrink: 0; }}
+  .avatar-fallback {{ width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--primary); flex-shrink: 0; background: var(--secondary); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; color: var(--muted-foreground); }}
+  .post-id {{ flex: 1; min-width: 0; }}
+  .post-name {{ display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .post-owner {{ font-size: 12px; color: var(--muted-foreground); }}
+  .open-pill {{
+    background: none; border: 1px solid var(--border); border-radius: 20px;
+    color: var(--muted-foreground); font-size: 12px; font-weight: 500;
+    padding: 5px 14px; white-space: nowrap;
+  }}
+  .open-pill:hover {{ border-color: var(--primary); color: var(--primary); text-decoration: none; }}
+
+  .post-body {{ padding: 4px 16px 0; }}
+  .icon-row {{ display: flex; align-items: center; gap: 4px; }}
+  .icon-btn {{ display: flex; align-items: center; gap: 5px; padding: 6px 4px; color: var(--muted-foreground); font-size: 13px; }}
+  .icon-btn svg {{ flex-shrink: 0; }}
+  .icon-spacer {{ flex: 1; }}
+
+  .caption {{ font-size: 14px; color: var(--foreground); line-height: 1.55; padding: 6px 4px 12px; margin: 0; }}
+  .caption .who {{ font-weight: 600; }}
+
+  .topics {{ padding: 0 4px 12px; display: flex; gap: 6px; flex-wrap: wrap; }}
   .topic {{
     font-size: 11px; font-weight: 500; color: #a78bfa;
     background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.2);
-    border-radius: 20px; padding: 3px 9px; letter-spacing: 0.02em;
+    border-radius: 20px; padding: 3px 9px;
   }}
-  .stats {{
-    padding: 10px 16px; border-top: 1px solid var(--border);
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    font-size: 12px; color: var(--muted-foreground);
-  }}
-  .stat {{ display: flex; align-items: center; gap: 5px; }}
-  .lang-dot {{ width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }}
-  .score {{ margin-left: auto; font-size: 12px; color: var(--accent); font-weight: 600; }}
-  .badges {{ padding: 0 16px 12px; display: flex; gap: 6px; flex-wrap: wrap; }}
-  .badge {{
-    font-size: 11px; border-radius: 4px; padding: 3px 8px; border: 1px solid var(--border);
-    color: var(--muted-foreground); background: rgba(255,255,255,0.03);
-  }}
+
+  .badges {{ padding: 0 4px 14px; display: flex; gap: 6px; flex-wrap: wrap; }}
+  .badge {{ font-size: 11px; border-radius: 4px; padding: 3px 8px; border: 1px solid var(--border); color: var(--muted-foreground); background: rgba(255,255,255,0.03); }}
   .badge.on {{ color: #4ade80; background: #22c55e1a; border-color: #22c55e4d; }}
-  .actions {{ padding: 12px 16px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }}
-  .open-btn {{
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--secondary); color: var(--foreground);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 7px 14px; font-size: 13px; font-weight: 600;
-    text-decoration: none; transition: border-color 0.15s;
-  }}
-  .open-btn:hover {{ border-color: rgba(124,58,237,0.4); }}
-  .updated {{ margin-left: auto; font-size: 11px; color: var(--muted-foreground); }}
+
   .empty {{ text-align: center; padding: 60px 0; color: var(--muted-foreground); font-size: 14px; }}
 </style>
 </head>
@@ -130,53 +127,54 @@ _PAGE_TEMPLATE = """<!doctype html>
 <header>
   <div class="header-inner">
     <div class="brand">devfeed<span class="dot">.</span></div>
+    <div class="count">{count} repos</div>
   </div>
 </header>
 <main>
+  <div class="stories">
+{stories}
+  </div>
+  <div class="feed">
 {cards}
+  </div>
 </main>
 </body>
 </html>
 """
 
-_CARD_TEMPLATE = """<article class="card">
-  <div class="card-head">
-    {avatar}
-    <div style="flex:1;min-width:0;">
-      <div class="title-row">
-        <span class="rank">#{rank}</span>
-        <span class="owner">{owner}</span>
-        <span class="slash">/</span>
-        <span class="name"><a href="{url}" target="_blank" rel="noopener noreferrer">{name}</a></span>
+_STORY_TEMPLATE = """    <a class="story" href="{url}" target="_blank" rel="noopener noreferrer">
+      <div class="story-ring">{story_avatar}</div>
+      <span class="story-label">{name}</span>
+    </a>"""
+
+_HEART_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>'
+_COMMENT_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+_BOOKMARK_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>'
+_VERIFIED_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" style="display:inline;vertical-align:middle;margin-left:2px;"><circle cx="12" cy="12" r="12" fill="#7c3aed"/><path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
+
+_POST_TEMPLATE = """    <article class="post">
+      <div class="post-head">
+        {avatar}
+        <div class="post-id">
+          <div class="post-name">#{rank} {owner}/{name}{verified}</div>
+          <div class="post-owner">{language_or_pushed}</div>
+        </div>
+        <a class="open-pill" href="{url}" target="_blank" rel="noopener noreferrer">Open</a>
       </div>
-      <p class="desc">{description}</p>
-    </div>
-  </div>
-  {topics_html}
-  <div class="stats">
-    {lang_html}
-    <div class="stat">&#9733; {stars}</div>
-    {forks_html}
-    {issues_html}
-    <div class="stat">{contributors} contributors</div>
-    <div class="score">score {score}</div>
-  </div>
-  <div class="badges">{badges_html}</div>
-  <div class="actions">
-    <a class="open-btn" href="{url}" target="_blank" rel="noopener noreferrer">Open on GitHub</a>
-    <span class="updated">Pushed {pushed_at}</span>
-  </div>
-</article>"""
+      <div class="post-body">
+        <div class="icon-row">
+          <span class="icon-btn">{heart_svg} {stars}</span>
+          <span class="icon-btn">{comment_svg} {issues}</span>
+          <span class="icon-spacer"></span>
+          <span class="icon-btn">{bookmark_svg} {score}</span>
+        </div>
+        <p class="caption"><span class="who">{owner}/{name}</span> {description}</p>
+        {topics_html}
+        <div class="badges">{badges_html}</div>
+      </div>
+    </article>"""
 
 _EMPTY_STATE = '<p class="empty">No repositories survived filtering and scoring.</p>'
-
-_LANG_COLORS: dict[str, str] = {
-    "Python": "#3572a5",
-    "TypeScript": "#3178c6",
-    "JavaScript": "#f7df1e",
-    "Rust": "#dea584",
-    "Go": "#00add8",
-}
 
 
 def _fmt_count(n: object) -> str:
@@ -193,6 +191,23 @@ def _fmt_date(value: object) -> str:
     return _html.escape(s[:10]) if s else "unknown"
 
 
+def _avatar_html(owner: str, avatar_url: object, css_class: str, fallback_class: str) -> str:
+    if avatar_url:
+        return f'<img class="{css_class}" src="{_html.escape(str(avatar_url))}" alt="{owner}" loading="lazy">'
+    initial = _html.escape((owner[:1] or "?").upper())
+    return f'<div class="{fallback_class}">{initial}</div>'
+
+
+def _story_html(repo: dict) -> str:
+    full_name = str(repo.get("full_name") or "unknown/unknown")
+    owner, _, name = full_name.partition("/")
+    owner = _html.escape(owner or "unknown")
+    name = _html.escape(name or full_name)
+    url = _html.escape(str(repo.get("html_url") or f"https://github.com/{full_name}"))
+    avatar = _avatar_html(owner, repo.get("owner_avatar_url"), "", "fallback")
+    return _STORY_TEMPLATE.format(url=url, story_avatar=avatar, name=name)
+
+
 def _card_html(rank: int, repo: dict) -> str:
     full_name = str(repo.get("full_name") or "unknown/unknown")
     owner, _, name = full_name.partition("/")
@@ -200,76 +215,62 @@ def _card_html(rank: int, repo: dict) -> str:
     name = _html.escape(name or full_name)
     url = _html.escape(str(repo.get("html_url") or f"https://github.com/{full_name}"))
     stars = _fmt_count(repo.get("stargazers_count"))
+    issues = _fmt_count(repo.get("open_issues_count"))
     score = repo.get("base_score", 0.0) or 0.0
     description = _html.escape(str(repo.get("description") or "").strip()) or "No description."
 
-    avatar_url = repo.get("owner_avatar_url")
-    if avatar_url:
-        avatar = f'<img class="avatar" src="{_html.escape(str(avatar_url))}" alt="{owner}" loading="lazy">'
-    else:
-        initial = _html.escape((owner[:1] or "?").upper())
-        avatar = f'<div class="avatar-fallback">{initial}</div>'
+    avatar = _avatar_html(owner, repo.get("owner_avatar_url"), "avatar", "avatar-fallback")
+
+    signals = (repo.get("has_license"), repo.get("has_tests"), repo.get("has_ci"), repo.get("readme_has_code_blocks"))
+    verified = _VERIFIED_SVG if all(signals) else ""
+
+    language = repo.get("language")
+    language_or_pushed = (
+        _html.escape(str(language)) if language else f"pushed {_fmt_date(repo.get('pushed_at'))}"
+    )
 
     topics = [str(t) for t in (repo.get("topics") or [])][:6]
+    topics_html = ""
     if topics:
         chips = "".join(f'<span class="topic">{_html.escape(t)}</span>' for t in topics)
         topics_html = f'<div class="topics">{chips}</div>'
-    else:
-        topics_html = ""
 
-    language = repo.get("language")
-    if language:
-        color = _LANG_COLORS.get(str(language), "#888")
-        lang_html = (
-            f'<div class="stat"><span class="lang-dot" style="background:{color}"></span>'
-            f"{_html.escape(str(language))}</div>"
-        )
-    else:
-        lang_html = ""
+    badge_defs = [
+        ("License", repo.get("has_license")),
+        ("Tests", repo.get("has_tests")),
+        ("CI", repo.get("has_ci")),
+        ("Docs", repo.get("readme_has_code_blocks")),
+    ]
+    badges = [f'<span class="badge{" on" if on else ""}">{label}</span>' for label, on in badge_defs]
+    badges_html = "".join(badges)
 
-    forks = repo.get("forks_count")
-    forks_html = f'<div class="stat">{_fmt_count(forks)} forks</div>' if forks is not None else ""
-
-    issues = repo.get("open_issues_count")
-    issues_html = f'<div class="stat">{_fmt_count(issues)} open issues</div>' if issues is not None else ""
-
-    badges = []
-    if repo.get("has_license"):
-        badges.append('<span class="badge on">License</span>')
-    if repo.get("has_tests"):
-        badges.append('<span class="badge on">Tests</span>')
-    if repo.get("has_ci"):
-        badges.append('<span class="badge on">CI</span>')
-    if repo.get("readme_has_code_blocks"):
-        badges.append('<span class="badge on">Docs</span>')
-    badges_html = "".join(badges) if badges else '<span class="badge">No quality signals detected</span>'
-
-    return _CARD_TEMPLATE.format(
+    return _POST_TEMPLATE.format(
         rank=rank,
         avatar=avatar,
         owner=owner,
         name=name,
+        verified=verified,
+        language_or_pushed=language_or_pushed,
         url=url,
+        heart_svg=_HEART_SVG,
+        stars=stars,
+        comment_svg=_COMMENT_SVG,
+        issues=issues,
+        bookmark_svg=_BOOKMARK_SVG,
+        score=f"{float(score):.3f}",
         description=description,
         topics_html=topics_html,
-        lang_html=lang_html,
-        stars=stars,
-        forks_html=forks_html,
-        issues_html=issues_html,
-        contributors=repo.get("contributor_count", 0) or 0,
-        score=f"{float(score):.3f}",
         badges_html=badges_html,
-        pushed_at=_fmt_date(repo.get("pushed_at")),
     )
 
 
 def render_html(ranked: list[dict]) -> str:
-    """Renders one card per repo. `ranked` is expected to already be
-    junk-filtered, scored, sorted by base_score descending, and capped to the
-    top ~100 by the caller (main.py) -- this function only renders what it's
-    given."""
+    """Renders the stories strip (top 15 by rank) plus one post-card per repo.
+    `ranked` is expected to already be junk-filtered, scored, sorted by
+    base_score descending, and capped to the top ~100 by the caller
+    (main.py) -- this function only renders what it's given."""
     if not ranked:
-        cards_html = _EMPTY_STATE
-    else:
-        cards_html = "\n".join(_card_html(i, repo) for i, repo in enumerate(ranked, start=1))
-    return _PAGE_TEMPLATE.format(count=len(ranked), cards=cards_html)
+        return _PAGE_TEMPLATE.format(count=0, stories="", cards=_EMPTY_STATE)
+    stories_html = "\n".join(_story_html(repo) for repo in ranked[:15])
+    cards_html = "\n".join(_card_html(i, repo) for i, repo in enumerate(ranked, start=1))
+    return _PAGE_TEMPLATE.format(count=len(ranked), stories=stories_html, cards=cards_html)
