@@ -6,7 +6,9 @@ Project Documentation
 
 ---
 
-DevFeed is a personalized discovery feed for developers, built on top of GitHub's repository ecosystem. Instead of scrolling entertainment content, you scroll GitHub repositories — AI projects, developer tools, data engineering work, research implementations, infrastructure and security tools, robotics, and anything else people are actively building in the open. It's a discovery engine for builders, not a GitHub search wrapper and not a social network clone.
+DevFeed is a personalized, social discovery feed for developers, built on top of GitHub's repository ecosystem. Instead of scrolling entertainment content, you scroll GitHub repositories — AI projects, developer tools, data engineering work, research implementations, infrastructure and security tools, robotics, and anything else people are actively building in the open — and you do it alongside other developers: liking, saving, following builders whose taste you trust, and discussing what you find. It's a discovery engine for builders, not a GitHub search wrapper — and, as of this revision, deliberately closer to a social feed than earlier drafts of this document argued for.
+
+> **Revision note.** Earlier versions of this document explicitly rejected the social-network framing ("not a social network clone," social features "deliberately last" at Stage 10). That was a considered position, not an oversight — and it has been deliberately reversed. Section 2's philosophy and Section 5's stage sequencing (Social/Community moved from Stage 10 to Stage 5, right after auth) reflect the new direction, and every stage-number cross-reference elsewhere in this document (database triggers, ranking-signal notes, search infrastructure) has been checked against the new numbering.
 
 This is the working reference for the product and the engineering behind it: what we're building, why, in what order, and how each part works.
 
@@ -49,7 +51,7 @@ This is the working reference for the product and the engineering behind it: wha
 
 A personalized feed for developers. You pick a handful of interests, and DevFeed shows you a ranked stream of GitHub repositories worth knowing about — AI and ML projects, developer tools, data engineering pipelines, research implementations, cloud and infrastructure projects, security tools, robotics, and general engineering work. Each card explains what the project is, what it's built with, how healthy it looks, and why it was ranked here. You save what's interesting, open it on GitHub, or keep scrolling.
 
-"Instagram for GitHub" is a fast way to explain the format to someone, but it isn't the product definition. The product is a discovery engine for builders: GitHub's repository ecosystem turned into something personalized and explorable, not just searchable.
+"Instagram for GitHub" used to be dismissed in this document as just a convenient explainer, not the product definition. That framing has changed: the product genuinely is a social feed for builders — GitHub's repository ecosystem turned into something personalized, explorable, and shared, not just searchable. Ranking quality (Sections 11-12) stays the product's technical core; the social layer (Section 18) is now built on top of it early, not deferred until the core proves itself alone.
 
 ### The problem
 
@@ -85,12 +87,13 @@ The feed optimizes for:
 - Technical quality and relevance
 - Novelty — not just what's already popular
 - Developer growth
+- Genuine social proof — knowing a builder whose taste you trust liked or is following a project is a real signal, not noise
 
-It explicitly does not optimize for screen time, addictive behavior, notification volume, or vanity metrics. The measurable target is useful discoveries per session, not minutes spent in the app.
+This is a deliberate reversal from an earlier draft of this document, which said the feed "explicitly does not optimize for... vanity metrics" and ruled out engagement mechanics on principle. The reversal is scoped: DevFeed now treats likes, follows, and comments as first-class product features, not deferred ones — but it still draws a line at manipulative mechanics specifically, not at social features generally. Still explicitly out: fake/bot notifications, artificial scarcity ("only 3 spots left"), engagement-bait copy, and misleading popularity signals (a follow count or like count has to mean what it says). The measurable target changes accordingly, from "useful discoveries per session" alone to useful discoveries per session **and** genuine social engagement (real follows of accounts a user keeps engaging with, comments that get replies, not just raw like-counts) — vanity metrics without a real behavioral signal behind them are still the thing to avoid, not engagement itself.
 
 ### Success criteria
 
-DevFeed is working if it consistently shows a developer something they didn't know existed, that they genuinely want to explore, learn from, contribute to, or build themselves. The desired reaction after a session: "I opened this for five minutes and found something I actually want to build."
+DevFeed is working if it consistently shows a developer something they didn't know existed, that they genuinely want to explore, learn from, contribute to, or build themselves — and if the social layer makes that discovery feel less solitary: following a handful of builders whose taste consistently pays off, seeing what people you respect are excited about this week. The desired reaction after a session: "I opened this for five minutes and found something I actually want to build" or "I found someone whose taste I trust and I'm following them now."
 
 ### Validation assumptions
 
@@ -124,13 +127,15 @@ These are decided in advance so they don't get argued away later:
 
 Not building any of the following until a specific trigger (Section 26) makes it necessary:
 
-- Complex authentication, social graph, notifications, comments, messaging
 - Deep-learning-based recommendations
 - Kubernetes, Kafka, a dedicated vector database, Elasticsearch/OpenSearch
 - Elaborate admin dashboards, mobile native apps
 - Payment systems, monetization, enterprise features
+- Direct messaging between users (comments and follows are in scope early per Section 18; DMs are not — a smaller, more deliberate surface than a general inbox)
 
-None of this is a permanent rejection — it's sequencing. Each item has a named trigger condition later in this document, and nothing gets built ahead of its trigger regardless of how far along the roadmap looks.
+**Changed from an earlier draft:** authentication, social graph, and comments were previously listed here as non-goals deferred to Stage 10. They're no longer deferred — see Section 5's stage sequencing and Section 18. Complex/elaborate moderation tooling for that social layer is still a non-goal for now (Section 18 still requires basic reporting/blocking before anything social ships publicly, just not the full admin moderation suite).
+
+None of the remaining items above is a permanent rejection — it's sequencing. Each has a named trigger condition later in this document, and nothing gets built ahead of its trigger regardless of how far along the roadmap looks.
 
 ---
 
@@ -189,12 +194,12 @@ flowchart TD
     S1 --> S2["Stage 2<br/>Public Product<br/>~2 weeks, deployed"]
     S2 --> S3["Stage 3<br/>Real User Validation<br/>10-20 developers"]
     S3 --> S4["Stage 4<br/>Production Foundation<br/>auth, workers, observability"]
-    S4 --> S5["Stage 5<br/>Personalization"]
-    S5 --> S6["Stage 6<br/>Semantic Discovery"]
-    S6 --> S7["Stage 7<br/>AI Project Intelligence"]
-    S7 --> S8["Stage 8<br/>Learning Mode"]
-    S8 --> S9["Stage 9<br/>Knowledge Graph"]
-    S9 --> S10["Stage 10<br/>Social / Community"]
+    S4 --> S5["Stage 5<br/>Social / Community<br/>moved up from Stage 10 -- see revision note, Section 1"]
+    S5 --> S6["Stage 6<br/>Personalization"]
+    S6 --> S7["Stage 7<br/>Semantic Discovery"]
+    S7 --> S8["Stage 8<br/>AI Project Intelligence"]
+    S8 --> S9["Stage 9<br/>Learning Mode"]
+    S9 --> S10["Stage 10<br/>Knowledge Graph"]
     S10 --> S11["Stage 11<br/>Production Scale"]
     S11 --> S12["Stage 12<br/>Developer Ecosystem"]
 ```
@@ -214,13 +219,13 @@ Stage 0 through Stage 3 is roughly six to eight weeks of work. Everything past t
 
 | Stage | Focus |
 |---|---|
-| 4 — Production Foundation | Authentication, background workers, structured observability — introduced one at a time, each behind its own trigger |
-| 5 — Personalization | Behavioral user profiles replacing topic-only selection |
-| 6 — Semantic Discovery | Embeddings and similarity search |
-| 7 — AI Project Intelligence | The project explainer and codebase-understanding layer |
-| 8 — Learning Mode | Projects connected to prerequisites and learning paths |
-| 9 — Knowledge Graph | Technologies, concepts, and projects as a connected graph |
-| 10 — Social / Community | Following developers and topics, comments, activity — deliberately last |
+| 4 — Production Foundation | Authentication, background workers, structured observability — introduced one at a time, each behind its own trigger. Auth lands here specifically because Stage 5's social layer needs real user identity to mean anything |
+| 5 — Social / Community | Following developers and topics, likes, saves, comments, activity feed — moved up from its earlier position at Stage 10 (see the revision note in Section 1). Basic reporting/blocking and spam detection ship alongside this, not after it |
+| 6 — Personalization | Behavioral user profiles replacing topic-only selection — now informed by social signals (who you follow, what they save) in addition to your own activity |
+| 7 — Semantic Discovery | Embeddings and similarity search |
+| 8 — AI Project Intelligence | The project explainer and codebase-understanding layer |
+| 9 — Learning Mode | Projects connected to prerequisites and learning paths |
+| 10 — Knowledge Graph | Technologies, concepts, and projects as a connected graph |
 | 11 — Production Scale | Whatever the system actually needs at real scale, decided when that's real |
 | 12 — Developer Ecosystem | Long-term platform direction — see Section 27 |
 
@@ -249,8 +254,8 @@ The complete product is made up of the following modules. Not all of them exist 
 | Learning Mode | Future |
 | Learning / Knowledge Graph | Future |
 | Collections | Future |
-| Developer Profiles | Future |
-| Social Layer | Future |
+| Developer Profiles | Future — Stage 5 (moved up from Stage 10, see Section 1's revision note) |
+| Social Layer (follows, likes, saves, comments) | Future — Stage 5 (moved up from Stage 10, see Section 1's revision note) |
 | Analytics | Current (minimal) / Future (full) |
 | Administration Tools | Future |
 | Content Moderation | Future |
@@ -303,7 +308,7 @@ Microservices, Kubernetes, Kafka or any event-streaming platform, Elasticsearch/
 
 ## 8. Technology Stack
 
-**Frontend** — Next.js, React, TypeScript, Tailwind CSS. Feature-organized (`feed/`, `repository/`, `search/`, not one giant `components/` directory). Built on reusable design tokens — typography, spacing, color, buttons, cards, badges, navigation, dialogs — rather than styling decisions scattered across individual components, with both dark and light mode supported from the start. Dark mode is the default; the visual language stays dense and technical, not a copy of Instagram or TikTok's visual style.
+**Frontend** — Next.js, React, TypeScript, Tailwind CSS. Feature-organized (`feed/`, `repository/`, `search/`, not one giant `components/` directory). Built on reusable design tokens — typography, spacing, color, buttons, cards, badges, navigation, dialogs — rather than styling decisions scattered across individual components, with both dark and light mode supported from the start. Dark mode is the default. **Changed from an earlier draft:** this used to say the visual language "stays dense and technical, not a copy of Instagram or TikTok's visual style" — that line predates the social-feed pivot (Section 1's revision note) and is now backwards. The actual direction is a social-feed layout (stories/post-card patterns, per the Stage 0 mockup already built), not a dense technical dashboard.
 
 **Backend** — Python, FastAPI, Pydantic for validation, SQLAlchemy + Alembic for the database layer.
 
@@ -315,7 +320,7 @@ Microservices, Kubernetes, Kafka or any event-streaming platform, Elasticsearch/
 
 **Search** — PostgreSQL full-text search initially (`tsvector`).
 
-**AI (future)** — A provider-independent LLM/embedding abstraction, introduced when Stage 7 actually starts. No vendor is chosen yet, because nothing depends on one.
+**AI (future)** — A provider-independent LLM/embedding abstraction, introduced when Stage 8 actually starts. No vendor is chosen yet, because nothing depends on one.
 
 **Infrastructure** — Docker Compose locally, for PostgreSQL only; the API and frontend run natively in development. Free-tier hosting to start: Vercel for the frontend, Fly.io or Railway for the API, Neon or Supabase for Postgres.
 
@@ -457,7 +462,7 @@ For every ingested repository, DevFeed captures, where GitHub provides it:
 
 This data is never assumed complete — GitHub records are frequently missing fields, and every downstream consumer of this data handles absence explicitly rather than assuming presence.
 
-The processing pipeline is a sequence of independently observable, independently retryable stages: discover candidates, fetch their data, validate what came back, normalize it into a consistent shape, enrich it with derived signals (quality score, star velocity), classify it into a category, and index it into PostgreSQL. Two later stages — embedding generation and recommendation precomputation — are future work (Stage 6+) and are not part of the current pipeline.
+The processing pipeline is a sequence of independently observable, independently retryable stages: discover candidates, fetch their data, validate what came back, normalize it into a consistent shape, enrich it with derived signals (quality score, star velocity), classify it into a category, and index it into PostgreSQL. Two later stages — embedding generation and recommendation precomputation — are future work (Stage 7+) and are not part of the current pipeline.
 
 ---
 
@@ -554,7 +559,7 @@ def rank(
 | Freshness | Days since last push, days since last release | Recent meaningful activity, not just any commit |
 | Popularity | Stars, forks | Weight is deliberately capped; must not dominate the final score |
 | Star velocity | Recent star growth, relative to total | Two explicit fields — see below |
-| Topic relevance | Overlap between repo topics/description and selected interests | Keyword-based for now; embedding-based from Stage 6 |
+| Topic relevance | Overlap between repo topics/description and selected interests | Keyword-based for now; embedding-based from Stage 7 |
 | Novelty | Inverse popularity within a relevant cluster | Stops the feed from only surfacing already-famous repos |
 
 Each signal is normalized to `[0, 1]` independently before weighting, so tuning one doesn't fight the others' scale.
@@ -643,7 +648,7 @@ No ranking change ships without running through this evaluation harness. Tuning 
 2. Postgres pre-filters to a bounded candidate set (<=1,000 rows) on topic/language,
    pre-sorted by a cheap heuristic like recency and stars - never the full corpus
 3. The user profile is loaded - Stage 2 is just selected topics; behavioral
-   weighting arrives in Stage 5
+   weighting arrives in Stage 6
 4. rank(candidates, profile, ctx) runs, in-process, no network calls
 5. MMR runs across the entire candidate set, producing one deterministic
    ordering; the requested page is a slice of it
@@ -870,7 +875,7 @@ None of this exists in the current build.
 
 ## 18. Social and Community
 
-**Future, and deliberately late.** Social functionality doesn't get built before the discovery engine has proven itself useful on its own — it may ultimately remain a small part of the product rather than a central one.
+**Future, but no longer deliberately late — moved up to Stage 5, right after Stage 4 gives the product real user identity to build on.** An earlier draft of this document held social features back until the discovery engine proved itself alone; that position has been reversed (Section 1's revision note, Section 2's product philosophy). Reporting, spam detection, blocking, and a moderation queue ship alongside the social features below, not after them — the trigger changed, not the requirement that moderation exists before anything social goes public.
 
 **Developer profiles** — eventually show projects, collections, interests, contributions, technologies, and open-source activity. Reputation is not designed around vanity metrics.
 
@@ -893,7 +898,7 @@ erDiagram
     REPOSITORIES ||--o{ USER_EVENTS : "referenced by"
     USERS ||--o{ SAVES : "Stage 4+"
     REPOSITORIES ||--o{ SAVES : "Stage 4+"
-    USERS ||--o{ USER_INTERESTS : "Stage 5+"
+    USERS ||--o{ USER_INTERESTS : "Stage 4+"
     USERS ||--o{ COLLECTIONS : "Stage 11+"
     COLLECTIONS ||--o{ COLLECTION_ITEMS : "Stage 11+"
     REPOSITORIES ||--o{ COLLECTION_ITEMS : "Stage 11+"
@@ -998,12 +1003,11 @@ There is no `users` table and no `saves` table at Stage 2. Stage 2 saves are `lo
 | Table | Introduced at | Trigger |
 |---|---|---|
 | `users`, `user_profiles`, `saves` | Stage 4 | Authentication is built |
-| `user_interests`, `likes`, `follows` | Stage 4–5 | Alongside auth / behavioral personalization |
-| `repository_embeddings` | Stage 6 | Semantic discovery (pgvector) |
-| `repository_analyses`, `ai_explanations` | Stage 7 | AI codebase understanding |
-| `learning_paths` | Stage 8 | Learning mode |
+| `user_interests`, `likes`, `follows`, `comments` | Stage 4–5 | Alongside auth / the social layer (moved up from Stage 10 — Section 1's revision note) |
+| `repository_embeddings` | Stage 7 | Semantic discovery (pgvector) |
+| `repository_analyses`, `ai_explanations` | Stage 8 | AI codebase understanding |
+| `learning_paths` | Stage 9 | Learning mode |
 | `collections`, `collection_items` | Later | Once users are regularly saving 20+ repos |
-| `comments` | Stage 10 | Social layer |
 
 ### Migration workflow
 
@@ -1285,7 +1289,7 @@ Potential cache targets: trending repositories, popular repositories, topic feed
 
 ### Search infrastructure
 
-PostgreSQL full-text search now; `pgvector` added inside the same database once semantic search is justified (Stage 6). External search infrastructure (Elasticsearch/OpenSearch) is not introduced unless scale genuinely requires it — not by default.
+PostgreSQL full-text search now; `pgvector` added inside the same database once semantic search is justified (Stage 7). External search infrastructure (Elasticsearch/OpenSearch) is not introduced unless scale genuinely requires it — not by default.
 
 ### Budget
 
@@ -1446,7 +1450,7 @@ Configuration determines database connection, GitHub credentials, AI provider se
 | AI provider integration | Feed quality is proven and users start asking "what is this?" |
 | Knowledge graph / additional stores | Learning-mode usage demonstrates real demand |
 | Collections | Users are regularly saving 20+ repos and losing track |
-| Social layer | The discovery engine has already proven itself on its own |
+| Social layer | Authentication exists (Stage 4) — moved up from "the discovery engine has proven itself alone," which was this row's trigger before Section 1's revision note reversed that position |
 | Service extraction | A specific component provably needs independent scaling |
 
 The kill criteria in Section 2 apply throughout — none of this roadmap overrides evidence that an earlier stage isn't working.
