@@ -24,6 +24,16 @@ SEARCH_RATE_LIMIT_PER_MIN = 30
 # reacting to a 403. 60s / 30 requests = 2.0s; padded to ~2.2s per request.
 SEARCH_REQUEST_INTERVAL_SECONDS = 2.2
 
+# --- Secondary-fetch pacing (discovered live: GitHub's secondary/abuse rate
+# limiter can return 403 on core-REST endpoints well before the primary
+# 5,000/hour budget is exhausted, if requests fire back-to-back with no
+# delay. This is separate from -- and not documented anywhere near as
+# clearly as -- the primary rate limit. A modest fixed delay between
+# secondary-fetch requests (readme/contributors/releases/path_exists) avoids
+# triggering it, which in practice is *faster* end-to-end than hitting 403s
+# and paying exponential retry-backoff on nearly every other repo.) ---
+SECONDARY_REQUEST_INTERVAL_SECONDS = 0.5
+
 # --- Bucket-size probe (DEVFEED.md section 9, "Query strategy") ---
 # A bucket whose probed total_count exceeds this threshold gets its star band split
 # further before the real, paginated query runs -- leaves headroom under GitHub's

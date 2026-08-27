@@ -64,3 +64,37 @@ def test_path_exists_false_on_persistent_403_not_raised(monkeypatch):
 
     with GitHubClient("fake-token", transport=httpx.MockTransport(handler)) as client:
         assert client.path_exists("owner/blocked-repo", "tests") is False
+
+
+def test_secondary_fetches_are_paced(monkeypatch):
+    """Regression test: a live overnight run needed ~18h at the observed rate
+    because secondary-fetch requests (readme/contributors/releases/
+    path_exists) fired back-to-back with zero delay, tripping GitHub's
+    secondary/abuse rate limiter well before the primary 5,000/hour budget
+    was anywhere near exhausted. Every secondary-fetch call must go through
+    the same pacing mechanism as Search."""
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(200, json={"content": "", "encoding": "base64"})
+
+    client = GitHubClient(
+        "fake-token",
+        transport=httpx.MockTransport(handler),
+        secondary_interval_seconds=0.5,
+    )
+    try:
+        client.get_readme("owner/repo-a")
+        client.get_readme("owner/repo-b")
+    finally:
+        client.close()
+
+    assert call_count["n"] == 2
+    # First call has nothing to wait on (elapsed since epoch-zero exceeds the
+    # interval); the second call must have paced at least once.
+    assert len(sleep_calls) >= 1
+    assert any(s > 0 for s in sleep_calls)

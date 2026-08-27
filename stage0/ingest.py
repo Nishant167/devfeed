@@ -17,7 +17,10 @@ from typing import Protocol
 
 import httpx
 
-from stage0.config import SEARCH_REQUEST_INTERVAL_SECONDS
+from stage0.config import (
+    SEARCH_REQUEST_INTERVAL_SECONDS,
+    SECONDARY_REQUEST_INTERVAL_SECONDS,
+)
 
 GITHUB_API_BASE = "https://api.github.com"
 
@@ -89,10 +92,13 @@ class GitHubClient:
         base_url: str = GITHUB_API_BASE,
         transport: httpx.BaseTransport | None = None,
         search_interval_seconds: float = SEARCH_REQUEST_INTERVAL_SECONDS,
+        secondary_interval_seconds: float = SECONDARY_REQUEST_INTERVAL_SECONDS,
     ) -> None:
         self._token = token
         self._search_interval_seconds = search_interval_seconds
+        self._secondary_interval_seconds = secondary_interval_seconds
         self._last_search_request_at: float = 0.0
+        self._last_secondary_request_at: float = 0.0
         self._client = httpx.Client(
             base_url=base_url,
             headers={
@@ -122,6 +128,17 @@ class GitHubClient:
             time.sleep(wait)
         self._last_search_request_at = time.monotonic()
 
+    def _pace_secondary(self) -> None:
+        """Paces core-REST secondary-fetch requests (readme/contributors/
+        releases/path_exists). Not required by the primary 5,000/hour budget,
+        but avoids tripping GitHub's secondary/abuse rate limiter, which
+        reacts to request bursts regardless of primary-quota headroom."""
+        elapsed = time.monotonic() - self._last_secondary_request_at
+        wait = self._secondary_interval_seconds - elapsed
+        if wait > 0:
+            time.sleep(wait)
+        self._last_secondary_request_at = time.monotonic()
+
     def search(self, query: str, page: int = 1, per_page: int = 100) -> dict:
         """One Search API page, paced against the Search rate limit."""
         return self._request_json(
@@ -147,11 +164,15 @@ class GitHubClient:
     # --- Core REST secondary fetches ---
 
     def get_repo(self, full_name: str) -> dict:
-        return self._request_json("GET", f"/repos/{full_name}")
+        return self._request_json(
+            "GET", f"/repos/{full_name}", pace_fn=self._pace_secondary
+        )
 
     def get_readme(self, full_name: str) -> dict | None:
         try:
-            return self._request_json("GET", f"/repos/{full_name}/readme")
+            return self._request_json(
+                "GET", f"/repos/{full_name}/readme", pace_fn=self._pace_secondary
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 return None
@@ -163,6 +184,7 @@ class GitHubClient:
                 "GET",
                 f"/repos/{full_name}/contributors",
                 params={"per_page": per_page, "anon": "0"},
+                pace_fn=self._pace_secondary,
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (404, 403):
@@ -173,7 +195,10 @@ class GitHubClient:
     def get_releases(self, full_name: str, per_page: int = 100) -> list[dict]:
         try:
             data = self._request_json(
-                "GET", f"/repos/{full_name}/releases", params={"per_page": per_page}
+                "GET",
+                f"/repos/{full_name}/releases",
+                params={"per_page": per_page},
+                pace_fn=self._pace_secondary,
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (404, 403):
@@ -193,7 +218,11 @@ class GitHubClient:
         resolves, and this is a best-effort heuristic signal, not a
         requirement. Matches get_contributors/get_releases below."""
         try:
-            self._request_json("GET", f"/repos/{full_name}/contents/{path}")
+            self._request_json(
+                "GET",
+                f"/repos/{full_name}/contents/{path}",
+                pace_fn=self._pace_secondary,
+            )
             return True
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (404, 403):
