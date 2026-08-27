@@ -234,6 +234,7 @@ def run(months_back: int, output_path: str) -> None:
                     "has_ci": False,
                     "has_tests": False,
                 }
+            owner = item.get("owner") or {}
             repo = {
                 "full_name": full_name,
                 "description": item.get("description"),
@@ -241,6 +242,14 @@ def run(months_back: int, output_path: str) -> None:
                 "stargazers_count": item.get("stargazers_count"),
                 "pushed_at": item.get("pushed_at"),
                 "has_license": bool(item.get("license")),
+                # Free fields already present on the search result item -- no
+                # extra API calls. Used by render.py for display only; none
+                # of these feed into scoring.
+                "language": item.get("language"),
+                "topics": item.get("topics") or [],
+                "forks_count": item.get("forks_count"),
+                "open_issues_count": item.get("open_issues_count"),
+                "owner_avatar_url": owner.get("avatar_url"),
                 **secondary,
             }
             repo["quality_score"] = quality_score(repo, now=today_date)
