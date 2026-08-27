@@ -308,7 +308,7 @@ Microservices, Kubernetes, Kafka or any event-streaming platform, Elasticsearch/
 
 ## 8. Technology Stack
 
-**Frontend** — Next.js, React, TypeScript, Tailwind CSS. Feature-organized (`feed/`, `repository/`, `search/`, not one giant `components/` directory). Built on reusable design tokens — typography, spacing, color, buttons, cards, badges, navigation, dialogs — rather than styling decisions scattered across individual components, with both dark and light mode supported from the start. Dark mode is the default; the visual language stays dense and technical, not a copy of Instagram or TikTok's visual style.
+**Frontend** — Next.js, React, TypeScript, Tailwind CSS. Feature-organized (`feed/`, `repository/`, `search/`, not one giant `components/` directory). Built on reusable design tokens — typography, spacing, color, buttons, cards, badges, navigation, dialogs — rather than styling decisions scattered across individual components, with both dark and light mode supported from the start. Dark mode is the default. **Changed from an earlier draft:** this used to say the visual language "stays dense and technical, not a copy of Instagram or TikTok's visual style" — that line predates the social-feed pivot (Section 1's revision note) and is now backwards. The actual direction is a social-feed layout (stories/post-card patterns, per the Stage 0 mockup already built), not a dense technical dashboard.
 
 **Backend** — Python, FastAPI, Pydantic for validation, SQLAlchemy + Alembic for the database layer.
 
